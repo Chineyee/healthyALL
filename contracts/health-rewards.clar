@@ -89,13 +89,32 @@
     (+ u1 (/ total-points u1000))
 )
 
-
+;; Award achievement badge
+(define-private (grant-achievement (member-address principal) (achievement-name (string-ascii 30)))
+    (let
+        ((existing-achievements (default-to (list) (map-get? member-achievements member-address))))
+        (map-set member-achievements
+            member-address
+            (unwrap-panic (as-max-len? (append existing-achievements achievement-name) u10))
+        )
+    )
+)
 
 ;; Read-only functions
 
 ;; Get user profile
 (define-read-only (get-member-profile (member-address principal))
     (map-get? member-profiles member-address)
+)
+
+;; Get goal details
+(define-read-only (get-quest-details (member-address principal) (quest-id uint))
+    (map-get? health-quests {member-address: member-address, quest-id: quest-id})
+)
+
+;; Get user achievements
+(define-read-only (get-member-achievements (member-address principal))
+    (map-get? member-achievements member-address)
 )
 
 ;; Get contract stats
