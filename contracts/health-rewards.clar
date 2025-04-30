@@ -100,6 +100,64 @@
     )
 )
 
+;; Log activity and update progress
+(define-public (log-activity (quest-id uint) (activity-units uint))
+    (let
+        ((member-address tx-sender)
+         (member-data (unwrap! (map-get? member-profiles member-address) ERR-MEMBER-PROFILE-NOT-FOUND)))
+        
+        (asserts! (> activity-units u0) ERR-INVALID-ACTIVITY-UNITS)
+        (asserts! (<= quest-id (get active-quest-count member-data)) ERR-INVALID-QUEST-ID)
+        
+        (let
+            ((quest-data (unwrap! (map-get? health-quests {member-address: member-address, quest-id: quest-id}) ERR-INVALID-QUEST-ID))
+             (activity-timestamp (unwrap-panic (get-block-info? time u0))))
+            
+            (asserts! (not (get quest-completed quest-data)) ERR-INVALID-HEALTH-GOAL)
+            (asserts! (<= activity-timestamp (get quest-expiration quest-data)) ERR-INVALID-HEALTH-GOAL)
+            
+            (let
+                ((new-progress (+ (get activity-progress quest-data) activity-units))
+                 (quest-achieved (>= new-progress (get activity-target quest-data)))
+                 (wellness-points (calculate-wellness-points activity-units))
+                 (new-wellness-score (+ (get wellness-score member-data) wellness-points)))
+                
+                ;; Update quest progress
+                (map-set health-quests
+                    {member-address: member-address, quest-id: quest-id}
+                    (merge quest-data {
+                        activity-progress: new-progress,
+                        quest-completed: quest-achieved
+                    })
+                )
+                
+                ;; Update member profile
+                (map-set member-profiles
+                    member-address
+                    (merge member-data {
+                        wellness-score: new-wellness-score,
+                        activity-count: (+ (get activity-count member-data) u1),
+                        last-activity-time: activity-timestamp,
+                        member-tier: (calculate-member-tier new-wellness-score)
+                    })
+                )
+                
+                ;; Award badge if quest completed
+                (if quest-achieved
+                    (grant-achievement member-address (concat "Completed " (get activity-type quest-data)))
+                    true
+                )
+                
+                (ok {
+                    new-progress: new-progress,
+                    quest-achieved: quest-achieved,
+                    new-wellness-score: new-wellness-score
+                })
+            )
+        )
+    )
+)
+
 ;; Claim rewards for completed goals
 (define-public (claim-quest-reward (quest-id uint))
     (let
