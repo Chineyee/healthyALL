@@ -69,6 +69,65 @@
     )
 )
 
+;; Set fitness goal
+(define-public (start-health-quest (activity-target uint) (quest-expiration uint) (activity-type (string-ascii 20)))
+    (let
+        ((member-address tx-sender)
+         (member-data (unwrap! (map-get? member-profiles member-address) ERR-MEMBER-PROFILE-NOT-FOUND))
+         (quest-id (+ (get active-quest-count member-data) u1)))
+        
+        (asserts! (> activity-target u0) ERR-INVALID-HEALTH-GOAL)
+        (asserts! (> quest-expiration (unwrap-panic (get-block-info? time u0))) ERR-INVALID-HEALTH-GOAL)
+        (asserts! (<= (len activity-type) u20) ERR-INVALID-HEALTH-GOAL)
+        
+        (map-set health-quests
+            {member-address: member-address, quest-id: quest-id}
+            {
+                activity-target: activity-target,
+                activity-progress: u0,
+                quest-expiration: quest-expiration,
+                quest-completed: false,
+                token-reward: (calculate-quest-reward activity-target),
+                activity-type: activity-type
+            }
+        )
+        
+        (map-set member-profiles
+            member-address
+            (merge member-data {active-quest-count: quest-id})
+        )
+        (ok quest-id)
+    )
+)
+
+;; Claim rewards for completed goals
+(define-public (claim-quest-reward (quest-id uint))
+    (let
+        ((member-address tx-sender)
+         (member-data (unwrap! (map-get? member-profiles member-address) ERR-MEMBER-PROFILE-NOT-FOUND)))
+        
+        (asserts! (<= quest-id (get active-quest-count member-data)) ERR-INVALID-QUEST-ID)
+        
+        (let
+            ((quest-data (unwrap! (map-get? health-quests {member-address: member-address, quest-id: quest-id}) ERR-INVALID-QUEST-ID)))
+            
+            (asserts! (get quest-completed quest-data) ERR-INVALID-HEALTH-GOAL)
+            (asserts! (>= (var-get total-reward-pool) (get token-reward quest-data)) ERR-INSUFFICIENT-REWARD-BALANCE)
+            
+            ;; Transfer rewards
+            (var-set total-reward-pool (- (var-get total-reward-pool) (get token-reward quest-data)))
+            (map-set member-profiles
+                member-address
+                (merge member-data {
+                    accrued-tokens: (+ (get accrued-tokens member-data) (get token-reward quest-data))
+                })
+            )
+            
+            (ok (get token-reward quest-data))
+        )
+    )
+)
+
 ;; Private functions
 
 ;; Calculate reward amount based on target
